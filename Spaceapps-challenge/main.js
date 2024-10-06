@@ -14,7 +14,7 @@ camera.position.set(0, 0, 50);
 
 
 const textureLoader = new THREE.TextureLoader();
-const panoramaTexture = textureLoader.load('/sky.png'); 
+const panoramaTexture = textureLoader.load('/sky.jpg'); 
 
 // const light = new THREE.PointLight(0xffffff, 100, 1000);
 // light.position.set(0, 0, 0);  // Light source at the center of the scene
@@ -48,7 +48,12 @@ function galacticToCartesian(lon, lat, distance = 1) {
 const ComBLoc = galacticToCartesian(78.28322, 264.13954,100)
 
 const starGeometry = new THREE.SphereGeometry(5, 32, 32); 
-const starMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const planetMaterial = textureLoader.load('/earth.jpg');
+
+const starMaterial = new THREE.MeshBasicMaterial({
+  map: planetMaterial,
+  side: THREE.FrontSide
+});
 
 const starMesh = new THREE.Mesh(starGeometry, starMaterial);
 starMesh.position.set(ComBLoc.x, ComBLoc.y, ComBLoc.z);
@@ -63,12 +68,12 @@ controls.listenToKeyEvents( window ); // optional
 //controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
 
 controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
-controls.dampingFactor = 0.05;
+controls.dampingFactor = 0.10;
 
 controls.screenSpacePanning = false;
 
-controls.minDistance = 100;
-controls.maxDistance = 500;
+controls.minDistance = 10;
+controls.maxDistance = 5;
 
 controls.maxPolarAngle = Math.PI / 2;
 
