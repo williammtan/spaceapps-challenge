@@ -4,7 +4,7 @@
 // import * as THREE from 'three';
 
 //current planet
-var planet = "earth"
+var planet = "24 Boo b"
 
 
 //an array for all the stars objects
@@ -52,6 +52,11 @@ var cur_rot_rad = lat2rot(cur_lat_deg);
 
 //the speed at which the sky dome rotates
 var rot_speed = 0.0005;
+
+var isDrawingMode = false;
+var selectedStars = [];
+var constellationLines = [];
+var constellations = [];
 
 
 //geo latitude to in program skydome rotation
@@ -124,8 +129,28 @@ async function getStars(cur_planet) {
   }
   
 
+  async function change_planet() {
+    console.log("Changing planet...");
+    for (let i = stars_objs.length - 1; i >= 0; i--) {
+        scene.remove(stars_objs[i]);  // Remove star from the scene
+        stars_objs[i].geometry.dispose(); // Dispose of the star geometry
+        stars_objs[i].material.dispose(); // Dispose of the star material
+        stars_objs.splice(i, 1); 
+    }
+
+    
+
+    planet = document.getElementById("planet").value;
+    console.log("Changing to planet:", planet);
+
+
+    await load_stars(planet);
+
+    console.log("New stars loaded for planet:", planet);
+}
+
 //for rendering the stars 
-async function load_stars() {
+async function load_stars(planet="earth") {
     //the catalog have a list of stars
     var starcat = await getStars(planet);
     
@@ -169,8 +194,17 @@ async function load_stars() {
             fragmentShader: _FS,
             blending: THREE.AdditiveBlending,
         });
+
+        var starMaterial = material.clone();
+
+        // Assign uniforms separately
+        starMaterial.uniforms = THREE.UniformsUtils.clone(material.uniforms);
+        starMaterial.uniforms.baseColor.value = new THREE.Color(st_color[0], st_color[1], st_color[2]);
+        starMaterial.uniforms.starObjPosition.value = new THREE.Color(sy, sz, sx);
+
+        var star = new THREE.Mesh(geometry, starMaterial);
         
-        var star = new THREE.Mesh(geometry, material);
+        // var star = new THREE.Mesh(geometry, material);
         
         //set position and add to scene
         star.position.x = sy;
@@ -290,8 +324,11 @@ function set_lat_pressed() {
 
 function onPointerMove( event ) {
     
-    pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-    pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+    var rect = renderer.domElement.getBoundingClientRect();
+    
+    // Adjust the mouse coordinates based on the canvas's position
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
 }
 
@@ -305,28 +342,170 @@ function onWindowResize() {
 }
 
 function onClick(event) {
-    raycaster.setFromCamera( pointer, camera );
-    const intersects = raycaster.intersectObjects( scene.children, false );
 
-    if ( intersects.length > 0 ) {
-        console.log(intersects[0].object)
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(stars_objs, false); // Only check stars
 
-        if ( INTERSECTED != intersects[ 0 ].object ) {
+    if (intersects.length > 0) {
+        var selectedStar = intersects[0].object;
 
-            console.log('nigger')
+        if (isDrawingMode) {
+            // Add the star to the selection if not already selected
+            if (!selectedStars.includes(selectedStar)) {
+                selectedStars.push(selectedStar);
+                highlightStar(selectedStar, true);
 
+                // Draw line if there are at least two selected stars
+                if (selectedStars.length > 1) {
+                    drawLineBetweenLastTwoStars();
+                }
+            }
+        } else {
+            // Not in drawing mode, you may implement other features here
         }
-
-    } else {
-
-        if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
-
-        INTERSECTED = null;
-
     }
 
     renderer.render(scene, camera);
 }
+
+
+
+function highlightStar(star, highlight) {
+    if (highlight) {
+        // Store the original color if not already stored
+        if (!star.userData.originalColor) {
+            star.userData.originalColor = star.material.uniforms.baseColor.value.clone();
+        }
+        // Change color to indicate selection (e.g., red)
+        star.material.uniforms.baseColor.value.set(0xff0000);
+    } else {
+        // Restore the original color
+        if (star.userData.originalColor) {
+            star.material.uniforms.baseColor.value.copy(star.userData.originalColor);
+        }
+    }
+}
+
+
+
+function drawLineBetweenLastTwoStars() {
+    var material = new THREE.LineBasicMaterial({ color: 0xffffff });
+
+    var geometry = new THREE.BufferGeometry().setFromPoints([
+        selectedStars[selectedStars.length - 2].position.clone(),
+        selectedStars[selectedStars.length - 1].position.clone()
+    ]);
+
+    var line = new THREE.Line(geometry, material);
+    scene.add(line);
+    constellationLines.push(line);
+}
+
+
+
+function saveConstellations() {
+    var data = constellations.map(constellation => ({
+        name: constellation.name,
+        stars: constellation.stars, // UUIDs of stars
+    }));
+    localStorage.setItem('constellations', JSON.stringify(data));
+}
+
+
+function clearSelection() {
+    // Remove highlights from stars
+    selectedStars.forEach(star => highlightStar(star, false));
+    selectedStars = [];
+
+    // Clear the temporary constellation lines (do not remove them from the scene)
+    constellationLines = [];
+}
+
+
+
+function addConstellationLabel(constellation) {
+    var loader = new THREE.FontLoader();
+    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+        var textGeometry = new THREE.TextGeometry(constellation.name, {
+            font: font,
+            size: 1,
+            height: 0.1,
+            curveSegments: 12,
+        });
+
+        var textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        var mesh = new THREE.Mesh(textGeometry, textMaterial);
+
+        // Position the label near the first line of the constellation
+        var line = constellation.lines[0];
+        var positions = line.geometry.attributes.position.array;
+
+        var startPoint = new THREE.Vector3(positions[0], positions[1], positions[2]);
+        var endPoint = new THREE.Vector3(positions[3], positions[4], positions[5]);
+        var midPoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
+
+        mesh.position.copy(midPoint);
+        mesh.lookAt(camera.position); // Make the text face the camera
+
+        scene.add(mesh);
+        constellation.label = mesh;
+    });
+}
+
+
+function toggleDrawingMode() {
+    isDrawingMode = !isDrawingMode;
+
+    var button = document.getElementById('toggleDrawingModeButton');
+    if (isDrawingMode) {
+        button.textContent = 'Stop Drawing Constellation';
+        button.style.backgroundColor = 'green';
+
+        // Clear any previous selection
+        clearSelection();
+    } else {
+        button.textContent = 'Start Drawing Constellation';
+        button.style.backgroundColor = 'grey';
+
+        if (selectedStars.length > 1) {
+            // Name and store the constellation
+            nameConstellation();
+        } else {
+            // Not enough stars selected, clear selection
+            clearSelection();
+            alert('Constellation must have at least two stars.');
+        }
+    }
+}
+
+
+function nameConstellation() {
+    var constellationName = prompt('Enter a name for your constellation:');
+    while (!constellationName) {
+        constellationName = prompt('Constellation name cannot be empty. Please enter a name:');
+    }
+
+    // Store the constellation data
+    var constellation = {
+        name: constellationName,
+        stars: selectedStars.slice(), // Copy the array
+        lines: constellationLines.slice(), // Copy the array
+        label: null
+    };
+
+    // Add constellation to the array
+    constellations.push(constellation);
+
+    // Display the name next to one of the lines
+    addConstellationLabel(constellation);
+
+    // Clear the selection for the next constellation
+    clearSelection();
+}
+
+
+
+
 
 
 
@@ -370,9 +549,12 @@ async function indexjs_setup() {
     //create the group object
     //the next functions will add objects to it
     sky_group = new THREE.Group();
+    console.log("sldkfjls")
     
     //load the stars
     await load_stars();
+
+    // loadConstellations();
     //load the milky way sky sphere
     load_skysphere();
 
@@ -395,6 +577,10 @@ async function indexjs_setup() {
     document.addEventListener('mousemove', onPointerMove );
     document.addEventListener('click', onClick );
     window.addEventListener( 'resize', onWindowResize );
+
+    document.getElementById('toggleDrawingModeButton').addEventListener('click', toggleDrawingMode);
+    document.getElementById("loadPlanetButton").addEventListener("click", change_planet);
+
 }
 
 //the requested lattitude (default toronto, ON)
@@ -417,6 +603,12 @@ function animate() {
     sky_group.rotateOnWorldAxis(axis_polar, -rot_speed);
     
     controls.update();
+    constellations.forEach(constellation => {
+        if (constellation.label) {
+            constellation.label.lookAt(camera.position);
+        }
+    });
+
     
     
     renderer.render(scene, camera);
