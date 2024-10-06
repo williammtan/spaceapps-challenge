@@ -13,13 +13,14 @@
 
 			#info {
 				position: absolute;
-				top: 0px; width: 100%;
+				top: 0px; 
+                width: 100%;
 				color: #ffffff;
 				padding: 5px;
-				font-family:Monospace;
-				font-size:13px;
+				font-family: Monospace;
+				font-size: 13px;
 				font-weight: bold;
-				text-align:center;
+				text-align: center;
 			}
 
 			a {
@@ -29,159 +30,167 @@
 	</head>
 	<body>
 
-       
-
         <div id="container"></div>
         <div id="info">
             <a href="index.html">back</a>
-            <canvas id="app"></canvas>
+            <input type="text" id="planet" placeholder="Enter Planet Name" style="z-index: 1000;">
+            <button id="loadPlanetButton"> Load Planet</button>
         </div>
-        <script type="module" src="/main.js"></script>
+
 		<script src="build/three.min.js"></script>
 
 		<script>
+            // Wrap all code inside DOMContentLoaded
+			document.addEventListener('DOMContentLoaded', function () {
+				let camera, scene, renderer, mesh;
+                const SERVER_URL = "http://35.186.177.144/";
 
-			var camera, scene, renderer;
+				let fov = 70,
+				isUserInteracting = false,
+				lon = 0, lat = 0,
+				phi = 0, theta = 0;
 
-			var fov = 70,
-			texture_placeholder,
-			isUserInteracting = false,
-			onMouseDownMouseX = 0, onMouseDownMouseY = 0,
-			lon = 0, onMouseDownLon = 0,
-			lat = 0, onMouseDownLat = 0,
-			phi = 0, theta = 0;
+				init();
+				animate();
 
-			init();
-			animate();
+				function init() {
+					let container = document.getElementById('container');
 
-			function init() {
+					// Setup camera
+					camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 1, 1100);
+					camera.target = new THREE.Vector3(0, 0, 0);
 
-				var container, mesh;
+					// Setup scene
+					scene = new THREE.Scene();
 
-				container = document.getElementById( 'container' );
+					// Create the sphere geometry for the planet
+					mesh = new THREE.Mesh(
+						new THREE.SphereGeometry(500, 60, 40),
+						new THREE.MeshBasicMaterial({ map: THREE.ImageUtils.loadTexture( '/sky.jpg' ) })  // Placeholder material
+					);
+					mesh.scale.x = -1;  // Reverse the geometry so we see the inside
+					scene.add(mesh);
 
-				camera = new THREE.PerspectiveCamera( fov, window.innerWidth / window.innerHeight, 1, 1100 );
-				camera.target = new THREE.Vector3( 0, 0, 0 );
+					// Setup renderer
+					renderer = new THREE.WebGLRenderer();
+					renderer.setSize(window.innerWidth, window.innerHeight);
+					container.appendChild(renderer.domElement);
 
-				scene = new THREE.Scene();
+					// Event listeners for interactivity
+					container.addEventListener('mousedown', onDocumentMouseDown, false);
+					container.addEventListener('mousemove', onDocumentMouseMove, false);
+					container.addEventListener('mouseup', onDocumentMouseUp, false);
+					container.addEventListener('mousewheel', onDocumentMouseWheel, false);
+					container.addEventListener('DOMMouseScroll', onDocumentMouseWheel, false);  // Firefox scroll
+					window.addEventListener('resize', onWindowResize, false);
+                    
+                    document.getElementById('loadPlanetButton').addEventListener('click', loadPlanetTexture);
+				}
 
-				mesh = new THREE.Mesh( new THREE.SphereGeometry( 500, 60, 40 ), new THREE.MeshBasicMaterial( { map: THREE.ImageUtils.loadTexture( '/sky.jpg' ) } ) );
-				mesh.scale.x = -1;
-				scene.add( mesh );
+				function loadPlanetTexture() {
+					const planetName = document.getElementById('planet').value;
+                    console.log(planetName);
 
-				renderer = new THREE.WebGLRenderer();
-				renderer.setSize( window.innerWidth, window.innerHeight );
+					// Validate if planet name is entered
+					if (!planetName) {
+						alert('Please enter a planet name!');
+						return;
+					}
 
-				container.appendChild( renderer.domElement );
+					const url = `/render?planet=${planetName}`;
 
-				document.addEventListener( 'mousedown', onDocumentMouseDown, false );
-				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
-				document.addEventListener( 'mouseup', onDocumentMouseUp, false );
-				document.addEventListener( 'mousewheel', onDocumentMouseWheel, false );
-				document.addEventListener( 'DOMMouseScroll', onDocumentMouseWheel, false);
 
-				//
+					// Fetch the planet texture from the server
+					fetch(url)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to load the planet image');
+                        }
+                        return response.blob();  // Return as blob to create image URL
+                    })
+						.then(blob => {
+							const imageUrl = URL.createObjectURL(blob);
+                            console.log(imageUrl);
+							const image = new Image();
+                            image.src = imageUrl;
 
-				window.addEventListener( 'resize', onWindowResize, false );
+                            // When the image is loaded, apply it to the material
+                            image.onload = function() {
+                                // Use ImageUtils.loadTexture with an existing image element
+                                const texture = new THREE.Texture(image);
+                                texture.needsUpdate = true;  // Update texture after loading
 
-			}
+                                // Apply the texture to the mesh material
+                                mesh.material.map = texture;
+                                mesh.material.needsUpdate = true;
+                            };
+						})
+						.catch(error => {
+							console.error('Error fetching the planet texture:', error);
+						});
 
-			function onWindowResize() {
 
+				}
+            function onWindowResize() {
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
-
 				renderer.setSize( window.innerWidth, window.innerHeight );
-
 			}
 
-			function onDocumentMouseDown( event ) {
-
+            function onDocumentMouseDown( event ) {
 				event.preventDefault();
-
 				isUserInteracting = true;
-
 				onPointerDownPointerX = event.clientX;
 				onPointerDownPointerY = event.clientY;
-
 				onPointerDownLon = lon;
 				onPointerDownLat = lat;
-
 			}
-
 			function onDocumentMouseMove( event ) {
-
 				if ( isUserInteracting ) {
-
 					lon = ( onPointerDownPointerX - event.clientX ) * 0.1 + onPointerDownLon;
 					lat = ( event.clientY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
-
 				}
 			}
-
 			function onDocumentMouseUp( event ) {
-
 				isUserInteracting = false;
-
 			}
-
 			function onDocumentMouseWheel( event ) {
-
 				// WebKit
-
 				if ( event.wheelDeltaY ) {
-
 					fov -= event.wheelDeltaY * 0.05;
-
 				// Opera / Explorer 9
-
 				} else if ( event.wheelDelta ) {
-
 					fov -= event.wheelDelta * 0.05;
-
 				// Firefox
-
 				} else if ( event.detail ) {
-
 					fov += event.detail * 1.0;
-
 				}
-
 				camera.projectionMatrix.makePerspective( fov, window.innerWidth / window.innerHeight, 1, 1100 );
 				render();
-
 			}
-
 			function animate() {
-
 				requestAnimationFrame( animate );
 				render();
-
 			}
-
 			function render() {
-
 				lat = Math.max( - 85, Math.min( 85, lat ) );
 				phi = ( 90 - lat ) * Math.PI / 180;
 				theta = lon * Math.PI / 180;
-
 				camera.target.x = 500 * Math.sin( phi ) * Math.cos( theta );
 				camera.target.y = 500 * Math.cos( phi );
 				camera.target.z = 500 * Math.sin( phi ) * Math.sin( theta );
-
 				camera.lookAt( camera.target );
-
 				/*
 				// distortion
 				camera.position.x = - camera.target.x;
 				camera.position.y = - camera.target.y;
 				camera.position.z = - camera.target.z;
 				*/
-
 				renderer.render( scene, camera );
-
 			}
-
+			
+			});
+			
 		</script>
 	</body>
 </html>
